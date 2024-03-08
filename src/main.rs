@@ -1,32 +1,31 @@
 use std::{
-    collections::{ HashMap, HashSet },
-    fs::{ self, File, FileType, OpenOptions },
-    io::{ BufReader, Read, Write },
+    collections::HashMap,
+    fs::{ self, File, OpenOptions },
+    io::{ stdout, BufReader, Read, Write },
     path::PathBuf,
-    str::FromStr,
     time::Duration,
 };
 
-use clap::{ builder::Str, Parser };
+use clap::Parser;
 use colored::Colorize;
-use indicatif::{ MultiProgress, ProgressBar, ProgressState, ProgressStyle };
+use indicatif::{ MultiProgress, ProgressBar, ProgressStyle };
 use rayon::iter::{ IntoParallelRefIterator, ParallelIterator };
 use ring::digest::{ Context, SHA256 };
 
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
-    #[arg(short, long)]
-    path: Option<PathBuf>,
+    #[arg(short, long, value_parser, num_args = 1..2, value_delimiter = ' ')]
+    paths: Option<Vec<PathBuf>>,
 
     #[arg(short, default_value_t = false)]
     compare: bool,
 
-    #[arg(short, long)]
-    files_to_compare: Option<Vec<PathBuf>>,
+    // #[arg(short, long)]
+    // files_to_compare: Option<Vec<PathBuf>>,
 
-    #[arg(short, long, default_value_t = false)]
-    disable_progress_bar: bool,
+    // #[arg(short, long, default_value_t = false)]
+    // disable_progress_bar: bool,
 
     #[arg(short, long, default_value_t = 1024 * 100)]
     buffer_size: usize,
@@ -60,7 +59,7 @@ fn compare<R: Read>(
     file1: &mut R,
     file2: &mut R
 ) -> Result<HashMap<String, CompareResult>, Box<dyn std::error::Error>> {
-    let mut hashmap1 = read_to_hashmap(file1)?;
+    let hashmap1 = read_to_hashmap(file1)?;
     let mut hashmap2 = read_to_hashmap(file2)?;
 
     let mut result: HashMap<String, CompareResult> = HashMap::new();
@@ -82,13 +81,8 @@ fn compare<R: Read>(
         result.insert(key.clone(), res);
         hashmap2.remove(key);
     }
-    for (key, value) in hashmap2.iter() {
-        let res = comp_func(key, value, &mut hashmap1);
-        if let CompareResult::Missing(_) = res {
-            result.insert(key.clone(), CompareResult::Missing(0));
-            continue;
-        }
-        result.insert(key.clone(), res);
+    for key in hashmap2.keys() {
+        result.insert(key.clone(), CompareResult::Missing(0));
     }
 
     Ok(result)
@@ -102,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     if args.compare {
-        let files = args.files_to_compare.ok_or("missing paths")?;
+        let files = args.paths.ok_or("missing paths")?;
         if files.len() != 2 {
             return Err(format!("Wrong number of paths {} insted of 2", files.len()).into());
         }
@@ -158,14 +152,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    if args.path.is_none() {
+    if args.paths.is_none() {
         println!("Path is None");
         return Ok(());
     }
 
-    // let path = PathBuf::from_str(&args.path.unwrap())?;
+    // let pool = rayon::ThreadPoolBuilder::new().num_threads(10)
 
-    let origin_path = args.path.unwrap();
+    crossterm::execute!(stdout(), crossterm::terminal::Clear(crossterm::terminal::ClearType::All))?;
+    let paths = args.paths.unwrap();
+
+    let origin_path = paths[0].clone();
 
     let mut dirs_to_check = vec![origin_path.clone()];
 
@@ -178,6 +175,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     total_progress.enable_steady_tick(Duration::from_secs(1));
 
     let progress_bars = MultiProgress::new();
+    progress_bars.set_move_cursor(false);
     let total_progress = progress_bars.add(total_progress);
 
     while let Some(dir) = dirs_to_check.pop() {
@@ -241,7 +239,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let mut context = Context::new(&SHA256);
 
-                let mut buffer = [0; 1024 * 100];
+                let mut buffer = vec![0; args.buffer_size];
                 loop {
                     let read_res = reader.read(&mut buffer);
                     match read_res {
@@ -276,12 +274,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             out_file.write(
                 format!(
                     "{}>{}\n",
-                    path.replace(origin_path.to_str().unwrap(), ""),
+                    path.replace(origin_path.canonicalize()?.to_str().unwrap(), ""),
                     checkum_res.as_ref().unwrap()
                 ).as_bytes()
             )?;
         }
         progress_bars.remove(&dir_progress);
+        progress_bars.clear()?;
         total_progress.inc(1);
     }
     total_progress.set_message("finished!");
