@@ -166,7 +166,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut dirs_to_check = vec![origin_path.clone()];
 
-    let mut out_file: File = OpenOptions::new().create_new(true).write(true).open("./out.txt")?;
+    let out_file = OpenOptions::new().create_new(true).write(true).open("./out.txt");
+    if let Err(err) = out_file {
+        println!("Failed to open out.txt {}", err);
+        return Ok(());
+    }
+    let mut out_file = out_file.unwrap();
 
     let progress_style = ProgressStyle::with_template(
         "[{elapsed_precise}] {bar:60} {pos:>7}/{len:7} {msg}"
