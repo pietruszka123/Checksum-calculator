@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use clap::Parser;
+use clap::{ builder::Str, Parser };
 use colored::Colorize;
 use indicatif::{ MultiProgress, ProgressBar, ProgressStyle };
 use rayon::iter::{ IntoParallelRefIterator, ParallelIterator };
@@ -15,7 +15,7 @@ use ring::digest::{ Context, SHA256 };
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
-    #[arg(short, long, value_parser, num_args = 1..2, value_delimiter = ' ')]
+    #[arg(short, long)]
     paths: Option<Vec<PathBuf>>,
 
     #[arg(short, default_value_t = false)]
@@ -29,6 +29,9 @@ struct Args {
 
     #[arg(short, long, default_value_t = 1024 * 100)]
     buffer_size: usize,
+
+    // #[arg(short, long, default_value_t = "./out.txt".to_string)]
+    // out_path: String,
 }
 
 enum CompareResult {
@@ -117,16 +120,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     same_count += 1;
                 }
                 CompareResult::Different => {
-                    println!("{}", format!("file at path {} is diffrent", key).yellow());
+                    println!("{}", format!("{} is diffrent", key).yellow());
                     diffrent_count += 1;
                 }
                 CompareResult::Missing(file_index) => {
                     let file_name = files[file_index as usize].file_name();
-
                     println!(
                         "{}",
                         format!(
-                            "the file at path {} is missing in {}",
+                            "{} is missing in {}",
                             key,
                             file_name
                                 .ok_or(
@@ -271,11 +273,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         for (index, path) in file_path.iter().enumerate() {
             let checkum_res = &res[index];
-            let path = path.to_str().unwrap();
+            let absoulte_path = path.canonicalize()?;
+            let path = absoulte_path.to_str().unwrap();
             if let Err(err) = checkum_res {
                 println!("Error while geting checksum of {} {}", path, err);
                 continue;
             }
+
             out_file.write(
                 format!(
                     "{}>{}\n",
