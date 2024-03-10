@@ -12,6 +12,9 @@ data-encoding = "2.5"
 indicatif = { version = "0.17", features = ["rayon"] }
 colored = "2.1"
 crossterm = "0.27"
+anyhow = "1.0"
+
+
 [profile.release]
 panic = "abort"   # Strip expensive panic clean-up logic
 codegen-units = 1 # Compile crates one after another so the compiler can optimize better
